@@ -11,6 +11,10 @@ so their outputs can be concatenated and compared:
 | `rimi/`     | Rimi                                              | rimi.lt e-shop HTML + category API    |
 | `barbora/`  | Barbora (Maxima)                                  | barbora.lt embedded page JSON         |
 
+Coverage on 2026-11-04 (products / with a valid nutrition label / with a card price):
+IKI 26 349 / 9 820 / 2 320 · PROMO Cash&Carry 28 775 / 21 908 / – · Assorti 4 547 / 2 207 / – ·
+Rimi 19 151 / 8 281 / 4 092 · Barbora 23 348 / 8 860 / 2 404.
+
 Run any of them with `mise x -- deno run --allow-net --allow-read --allow-write <dir>/scrape.ts`.
 
 Columns: `name, category, parentCategory, nutritionValid, energy (kcal), fat, satFat, carbs,
