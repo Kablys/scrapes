@@ -168,6 +168,10 @@ export function isValidNutrition(p: Nutrition) {
   if (p.salt > 100) return false;
   const macro = [p.fat, p.carbs, p.protein, p.salt].filter((x) => !isNaN(x));
   if (macro.reduce((a, b) => a + b, 0) > 100) return false;
+  // Declared energy far below what the macros imply: usually a 0/1 kcal placeholder or a
+  // typo. The factor 3 leaves room for polyols and fibre (xylitol, psyllium pass).
+  const kcalFromMacros = 4 * (p.protein || 0) + 4 * (p.carbs || 0) + 9 * (p.fat || 0);
+  if (kcalFromMacros > 3 * p.energy + 20) return false;
   return true;
 }
 

@@ -38,6 +38,10 @@ type Card = {
 };
 
 const code = (c: Cat) => c.url.split("/c/")[1];
+// A few cards link to /lt/c/<slug>/p/<id>, which 404s; any slug under /produktai/ redirects
+// to the right page.
+const productUrl = (p: Card) =>
+  p.url.includes("/produktai/") ? p.url : `${BASE}/e-parduotuve/lt/produktai/x/p/${p.id}`;
 
 const unescapeHtml = (s: string) =>
   s.replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
@@ -140,7 +144,7 @@ if (!flag("no-details")) {
   };
   const food = raw.filter((p) => !NON_FOOD.includes(root(p.category)));
   const byId = new Map(food.map((p) => [p.id, p]));
-  details = await withDetailCache(here, "rimi", [...byId.keys()], (id) => fetchDetail(byId.get(id)!.url), {
+  details = await withDetailCache(here, "rimi", [...byId.keys()], (id) => fetchDetail(productUrl(byId.get(id)!)), {
     max: Number(option("max-details") ?? Infinity),
   });
 }
@@ -166,7 +170,7 @@ const rows = raw.map((p) => {
     isActive: "",
     isInStock: p.available,
     countryOfOrigin: d?.countryOfOrigin,
-    url: p.url,
+    url: productUrl(p),
   } satisfies Input);
 });
 if (otherLabels.size) console.error("  non-card promo labels (ignored):", Object.fromEntries(otherLabels));
