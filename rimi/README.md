@@ -11,8 +11,8 @@ deno run --allow-net --allow-read --allow-write scrape.ts --max-details 500   # 
 ```
 
 - Product lists: ~19k products from ~190 HTML pages (~3 min).
-- Nutrition: one product page per food product (~11.7k). The first run takes about
-  30–40 min. Results are kept in `data_cache/rimi_details.json` and only re-fetched after
+- Nutrition: one product page per food product (~11.7k). The site throttles, so the first run
+  takes about 1.5 h. Results are kept in `data_cache/rimi_details.json` and only re-fetched after
   60 days, so later runs fetch only new products.
 - Writes `data/rimi_products_<date>.csv` (git-ignored) and raw dumps to `data_cache/`.
 

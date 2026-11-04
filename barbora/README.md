@@ -12,7 +12,7 @@ deno run --allow-net --allow-read --allow-write scrape.ts --max-details 500   # 
 
 - Product lists: ~23k products from ~450 pages (~2 min).
 - Nutrition: one product page per food product (~14k). Barbora rate-limits (HTTP 429) and
-  the script backs off, so the first run takes about 2 h. Results are kept in
+  the script backs off, so the first run takes 3–4 h. Results are kept in
   `data_cache/barbora_details.json` and only re-fetched after 60 days, so later runs fetch
   only new products. Interrupting is safe: progress is checkpointed every 250 pages.
 - Writes `data/barbora_products_<date>.csv` (git-ignored) and raw dumps to `data_cache/`.
