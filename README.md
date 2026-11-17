@@ -1,19 +1,22 @@
 # scrapes
 
 Assorted scrapers. `rimi/` and `barbora/` share `lib/grocery.ts` (fetch with retry, caching,
-nutrition parsing and validation, CSV output); `iki/` uses its nutrition validation and
+nutrition parsing and validation, CSV output); `lastmile/` uses its nutrition validation and
 pack-size check but keeps its own energy parsing. All grocery scrapers write the **same CSV columns**,
 so their outputs can be concatenated and compared:
 
 | Folder      | Shop(s)                                           | Source                                |
 |-------------|---------------------------------------------------|---------------------------------------|
-| `iki/`      | IKI, PROMO Cash&Carry, Assorti, Livin (`--chain`) | lastmile.lt search API (JSON)         |
+| `lastmile/` | IKI, PROMO Cash&Carry, Assorti, Livin (`--chain`) | lastmile.lt search API (JSON)         |
 | `rimi/`     | Rimi                                              | rimi.lt e-shop HTML + category API    |
 | `barbora/`  | Barbora (Maxima)                                  | barbora.lt JSON API (`/proxy/api/v1`) |
 
 Coverage on 2026-11-04 (products / with a valid nutrition label / with a card price):
 IKI 26 349 / 9 820 / 2 320 · PROMO Cash&Carry 28 775 / 21 908 / – · Assorti 4 547 / 2 207 / – ·
 Rimi 19 151 / 8 281 / 4 092 · Barbora 23 348 / 8 860 / 2 404.
+
+`iki/scrape.ts` is the separate IKI-only script behind the IKI explorer (`iki/index.html`) and
+`iki/nutri/`; it writes `cleaned_products.csv` in its own format.
 
 Run any of them with `mise x -- deno run --allow-net --allow-read --allow-write <dir>/scrape.ts`.
 

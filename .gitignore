@@ -1,4 +1,6 @@
 data_cache/
-iki/data/
+lastmile/data/
 rimi/data/
 barbora/data/
+# Raw scrape dump — 194 MB, over GitHub's 100 MB limit; regenerate with iki/scrape.ts
+iki/raw_iki_product_data.json
