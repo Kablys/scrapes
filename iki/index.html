@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>IKI Nutrition Explorer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Interactive explorer for cleaned_products.csv + categories.json. Serve over http:
+     cd iki && python3 -m http.server 8000  ->  http://localhost:8000/ -->
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<style>
+  :root { --bg:#fafafa; --panel:#fff; --line:#e5e5e5; --ink:#1a1a1a; --muted:#666; --accent:#e2001a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.4 system-ui,sans-serif; color:var(--ink); background:var(--bg); }
+  header { padding:14px 18px; background:var(--accent); color:#fff; }
+  header h1 { margin:0; font-size:18px; }
+  header .sub { opacity:.9; font-size:12px; margin-top:2px; }
+  .controls { display:flex; flex-wrap:wrap; gap:12px 14px; align-items:flex-end;
+    padding:12px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
+  .ctrl { display:flex; flex-direction:column; gap:3px; }
+  .ctrl label { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  select, input { padding:6px 8px; border:1px solid var(--line); border-radius:5px; font:inherit; background:#fff; }
+  input[type=search] { min-width:170px; }
+  input[type=range] { width:110px; padding:0; }
+  .count { margin-left:auto; font-size:13px; color:var(--muted); align-self:center; text-align:right; }
+  .count b { color:var(--ink); }
+  #weights { display:flex; gap:14px; padding:8px 18px; background:#fff7f7;
+    border-bottom:1px solid var(--line); align-items:flex-end; flex-wrap:wrap; }
+  #weights .ctrl label { color:var(--accent); }
+  #weights .wnote { font-size:12px; color:var(--muted); align-self:center; max-width:330px; }
+  .split { display:flex; align-items:stretch; height:calc(100vh - 250px); min-height:420px; }
+  /* category tree sidebar */
+  #tree { width:270px; flex:none; overflow:auto; background:#fff; border-right:1px solid var(--line);
+    padding:6px 4px 20px; font-size:13px; }
+  #tree .th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); padding:6px 10px; }
+  #tree details > summary { list-style:none; cursor:pointer; display:flex; align-items:center; }
+  #tree details > summary::-webkit-details-marker { display:none; }
+  #tree summary::before { content:"▸"; color:#aaa; font-size:10px; width:12px; flex:none; }
+  #tree details[open] > summary::before { content:"▾"; }
+  #tree .leaf::before { content:""; width:12px; flex:none; display:inline-block; }
+  #tree .leaf { display:flex; align-items:center; }
+  #tree .pick { flex:1; padding:2px 4px; border-radius:4px; cursor:pointer; }
+  #tree .pick:hover { background:#f2f2f2; }
+  #tree .pick.active { background:var(--accent); color:#fff; }
+  #tree .cnt { color:#aaa; font-size:11px; padding-right:8px; }
+  #tree .pick.active + .cnt { color:#fff; }
+  #tree .allbtn { margin:2px 6px 8px; }
+  .right { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .plotwrap { position:relative; flex:1 1 55%; min-height:300px; }
+  #plot { width:100%; height:100%; }
+  #tablewrap { flex:1 1 45%; overflow:auto; border-top:1px solid var(--line); background:#fff; }
+  table { border-collapse:collapse; width:100%; font-size:12px; }
+  th,td { padding:4px 8px; text-align:right; white-space:nowrap; border-bottom:1px solid #f0f0f0; }
+  th { position:sticky; top:0; background:#fff; color:var(--muted); font-weight:600; z-index:1;
+    text-transform:uppercase; font-size:10px; letter-spacing:.03em; border-bottom:2px solid var(--line); }
+  td.name { text-align:left; white-space:normal; max-width:240px; }
+  td.name .path { color:#999; font-size:10.5px; }
+  td.img img, .card img { background:#f4f4f4; border-radius:4px; object-fit:contain; }
+  td.img img { width:38px; height:38px; }
+  tr.pareto td { background:#fff3cd; }
+  /* product card on point click */
+  .card { position:absolute; top:10px; right:10px; width:230px; background:#fff; z-index:5;
+    border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 24px rgba(0,0,0,.16); padding:12px; }
+  .card img { width:100%; height:150px; }
+  .card h4 { margin:8px 0 2px; font-size:14px; }
+  .card .path { color:#999; font-size:11px; }
+  .card .stats { margin-top:8px; font-size:12px; display:grid; grid-template-columns:auto auto; gap:2px 10px; }
+  .card .stats b { font-weight:600; }
+  .card .close { position:absolute; top:6px; right:9px; cursor:pointer; color:#999; font-size:18px; line-height:1; }
+  .hint { padding:6px 18px; font-size:12px; color:var(--muted); background:var(--panel); }
+  label.check { flex-direction:row; align-items:center; gap:5px; text-transform:none; letter-spacing:0; font-size:13px; color:var(--ink); }
+  @media (max-width:820px){ .split{flex-direction:column; height:auto}
+    #tree{width:auto; max-height:34vh; border-right:none; border-bottom:1px solid var(--line)}
+    .plotwrap{height:52vh} #tablewrap{max-height:60vh} }
+</style>
+<header>
+  <h1>IKI Nutrition Explorer — Cheap · Low-cal · High-protein</h1>
+  <div class="sub">Multi-objective optimization over IKI products. Objectives are per-100&nbsp;g/ml so price and nutrition are comparable. Pick any level in the category tree →</div>
+</header>
+<div class="controls">
+  <div class="ctrl"><label for="colorby">Color by</label><select id="colorby">
+    <option value="score">Optimization score</option>
+    <option value="pareto">Pareto-optimal set</option>
+    <option value="category">Category</option>
+  </select></div>
+  <div class="ctrl"><label for="x">X axis</label><select id="x"></select></div>
+  <div class="ctrl"><label for="y">Y axis</label><select id="y"></select></div>
+  <div class="ctrl"><label for="q">Search name</label><input id="q" type="search" placeholder="e.g. sūris, varškė…"></div>
+  <div class="ctrl"><label class="check"><input id="paretoOnly" type="checkbox"> Pareto-optimal only</label></div>
+  <div class="ctrl"><label class="check"><input id="logx" type="checkbox"> log X</label></div>
+  <div class="ctrl"><label class="check"><input id="logy" type="checkbox"> log Y</label></div>
+  <div class="count" id="count"></div>
+</div>
+<div id="weights">
+  <div class="ctrl"><label for="wCheap">Cheap ↓ <span id="wCheapV"></span></label><input id="wCheap" type="range" min="0" max="100" value="34"></div>
+  <div class="ctrl"><label for="wCal">Low calorie ↓ <span id="wCalV"></span></label><input id="wCal" type="range" min="0" max="100" value="33"></div>
+  <div class="ctrl"><label for="wProt">High protein ↑ <span id="wProtV"></span></label><input id="wProt" type="range" min="0" max="100" value="33"></div>
+  <div class="wnote">Weights drive the <b>score</b> &amp; ranked table. The <b>Pareto set</b> is weight-free: products no other product beats on all three fronts at once.</div>
+</div>
+<div class="split">
+  <aside id="tree"><div class="th">Category</div></aside>
+  <div class="right">
+    <div class="plotwrap"><div id="plot"></div><div class="card" id="card" hidden></div></div>
+    <div id="tablewrap"><table id="results"></table></div>
+  </div>
+</div>
+<div class="hint" id="hint">Loading data…</div>
+
+<script>
+const AXES = {
+  pricePer100:   "Price (€/100g·ml)",
+  protein:       "Protein (g/100)",
+  energy:        "Energy (kcal/100)",
+  proteinPerEur: "Protein g per €",
+  kcalPerEur:    "kcal per €",
+  actualPrice:   "Package price (€)",
+  fat:"Fat (g/100)", satFat:"Saturated fat (g/100)", carbs:"Carbs (g/100)",
+  sugar:"Sugar (g/100)", salt:"Salt (g/100)",
+};
+const UNCAT = "__uncat__";
+let DATA = [];
+const catById = new Map();      // id -> {id,parentId,name,children:[],count:0}
+let roots = [];                 // top-level category nodes with products
+let activeCat = "__all__";
+
+function num(v){ return v === "" || v == null ? null : (isNaN(+v) ? null : +v); }
+const fold = s => s.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
+const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const X = id => document.getElementById(id);
+
+Promise.all([
+  fetch("cleaned_products.csv").then(r=>r.text()),
+  fetch("categories.json").then(r=>r.json()),
+]).then(([csv, cats]) => {
+  for (const c of cats) catById.set(c.id, {...c, children:[], count:0});
+  catById.set(UNCAT, {id:UNCAT, parentId:null, name:"(uncategorized)", children:[], count:0});
+
+  const rows = Papa.parse(csv, {header:true, skipEmptyLines:true}).data;
+  DATA = rows.map(r => {
+    const price = num(r.actualPrice), energy = num(r.energy), protein = num(r.protein);
+    const cv = num(r.conversionValue), cm = r.conversionMeasure;
+    const pricePer100 = (price && cv && (cm === "KG" || cm === "L"))
+      ? +(price / (cv * 10)).toFixed(2) : null;
+    const optimizable = pricePer100 != null && energy != null && protein != null;
+    const path = pathIds(r.categoryId);          // leaf..root, [] if orphan
+    if (!path.length) path.push(UNCAT);
+    return {
+      name: r.name || "", _key: fold(r.name || ""), thumb: r.thumb || "",
+      catPath: path, _cats: new Set(path),        // for subtree filtering
+      actualPrice: price, energy, protein,
+      fat:num(r.fat), satFat:num(r.satFat), carbs:num(r.carbs), sugar:num(r.sugar), salt:num(r.salt),
+      pricePer100, optimizable,
+      proteinPerEur: optimizable ? +(protein / pricePer100).toFixed(1) : null,
+      kcalPerEur:    optimizable ? +(energy  / pricePer100).toFixed(0) : null,
+      _score:0, _pareto:false,
+    };
+  });
+
+  // subtree product counts + parent/child links, then prune to product-bearing nodes
+  for (const d of DATA) for (const id of d._cats) { const n=catById.get(id); if (n) n.count++; }
+  for (const n of catById.values()){
+    const p = catById.get(n.parentId);
+    if (p && n.count) p.children.push(n);
+  }
+  roots = [...catById.values()].filter(n => n.count && !catById.has(n.parentId))
+                               .sort((a,b)=>b.count-a.count);
+  initControls();
+  renderTree();
+  render();
+});
+
+// walk parentId chain: returns [leaf, ..., root] of ids that exist in the tree
+function pathIds(id){
+  const out=[], seen=new Set();
+  while (id && catById.has(id) && !seen.has(id)){ seen.add(id); out.push(id); id=catById.get(id).parentId; }
+  return out;
+}
+const pathNames = d => d.catPath.map(id => catById.get(id)?.name).reverse().join(" › ");
+
+const PALETTE = ["#e2001a","#1f77b4","#2ca02c","#ff7f0e","#9467bd","#8c564b",
+                 "#e377c2","#17becf","#bcbd22","#d62728","#7f7f7f","#393b79"];
+let topCats = [];
+
+function initControls(){
+  for (const [k,label] of Object.entries(AXES)){ X("x").add(new Option(label,k)); X("y").add(new Option(label,k)); }
+  X("x").value = "pricePer100"; X("y").value = "protein";
+  topCats = roots.slice(0,11).map(r=>r.id);   // color-by-category uses top roots
+  ["colorby","x","y","paretoOnly","logx","logy","wCheap","wCal","wProt"]
+    .forEach(id => X(id).addEventListener("input", render));
+  X("q").addEventListener("input", render);
+}
+
+// ---- category tree UI ------------------------------------------------------
+function renderTree(){
+  const t = X("tree");
+  t.innerHTML = `<div class="th">Category</div>`
+    + `<div class="leaf allbtn"><span class="pick${activeCat==="__all__"?" active":""}" data-id="__all__">All categories</span>`
+    + `<span class="cnt">${DATA.length}</span></div>`
+    + roots.map(n => nodeHtml(n)).join("");
+  t.onclick = e => {
+    const p = e.target.closest(".pick"); if (!p) return;
+    e.preventDefault();                        // don't toggle <details> when picking a label
+    activeCat = p.dataset.id;
+    t.querySelectorAll(".pick.active").forEach(el=>el.classList.remove("active"));
+    p.classList.add("active");
+    render();
+  };
+}
+function nodeHtml(node){
+  const active = node.id===activeCat ? " active" : "";
+  const label = `<span class="pick${active}" data-id="${node.id}">${esc(node.name)}</span>`
+              + `<span class="cnt">${node.count}</span>`;
+  const kids = node.children.filter(c=>c.count).sort((a,b)=>b.count-a.count);
+  if (!kids.length) return `<div class="leaf">${label}</div>`;
+  return `<details><summary>${label}</summary>${kids.map(nodeHtml).join("")}</details>`;
+}
+
+// ---- multi-objective helpers ----------------------------------------------
+function minmax(arr,key){ let mn=Infinity,mx=-Infinity;
+  for (const d of arr){ if(d[key]<mn)mn=d[key]; if(d[key]>mx)mx=d[key]; } return [mn,mx]; }
+function scoreAll(opt,w){
+  const [pMn,pMx]=minmax(opt,"pricePer100"), [eMn,eMx]=minmax(opt,"energy"), [rMn,rMx]=minmax(opt,"protein");
+  const nrm=(v,mn,mx)=>(v-mn)/((mx-mn)||1);
+  for (const d of opt) d._score = w.cheap*(1-nrm(d.pricePer100,pMn,pMx))
+    + w.cal*(1-nrm(d.energy,eMn,eMx)) + w.prot*nrm(d.protein,rMn,rMx);
+}
+// ponytail: O(n²) skyline with early break; recomputed only when the filter set changes.
+// Upgrade path if a whole-catalog front lags: sort by price then 2D (energy,protein) sweep.
+let paretoSig=null;
+function ensurePareto(opt,sig){
+  if (sig===paretoSig) return; paretoSig=sig;
+  for (const d of opt) d._pareto=true;
+  for (let i=0;i<opt.length;i++){ const a=opt[i];
+    for (let j=0;j<opt.length;j++){ if(i===j)continue; const b=opt[j];
+      if (b.pricePer100<=a.pricePer100 && b.energy<=a.energy && b.protein>=a.protein &&
+          (b.pricePer100<a.pricePer100 || b.energy<a.energy || b.protein>a.protein)){ a._pareto=false; break; }
+    }
+  }
+}
+
+let tracePts = [];   // parallel to plot traces, for click->product card
+function render(){
+  const mode=X("colorby").value, xk=X("x").value, yk=X("y").value;
+  const q=fold(X("q").value.trim()), optimizeMode = mode!=="category";
+
+  let base = DATA;
+  if (activeCat!=="__all__") base = base.filter(d => d._cats.has(activeCat));
+  if (q) base = base.filter(d => d._key.includes(q));
+
+  const opt = base.filter(d=>d.optimizable);
+  let w = {cheap:+X("wCheap").value, cal:+X("wCal").value, prot:+X("wProt").value};
+  const s = w.cheap+w.cal+w.prot || 1; w={cheap:w.cheap/s, cal:w.cal/s, prot:w.prot/s};
+  X("wCheapV").textContent=Math.round(100*w.cheap)+"%";
+  X("wCalV").textContent=Math.round(100*w.cal)+"%"; X("wProtV").textContent=Math.round(100*w.prot)+"%";
+  if (opt.length){ scoreAll(opt,w); ensurePareto(opt, activeCat+"|"+q); }
+
+  let pts = (optimizeMode?opt:base).filter(d=>d[xk]!=null && d[yk]!=null);
+  if (X("paretoOnly").checked) pts = pts.filter(d=>d._pareto);
+
+  const hover = d => `<b>${d.name}</b><br>${pathNames(d)}`
+    + `<br>€${d.pricePer100}/100g · ${d.energy} kcal · ${d.protein} g protein`
+    + (optimizeMode ? `<br>score ${(d._score*100).toFixed(0)}${d._pareto?" · ★":""}` : "");
+
+  let traces;
+  if (mode==="score"){
+    tracePts=[pts];
+    traces=[{ type:"scattergl", mode:"markers", x:pts.map(d=>d[xk]), y:pts.map(d=>d[yk]),
+      text:pts.map(hover), hoverinfo:"text",
+      marker:{size:7,opacity:.75,color:pts.map(d=>d._score),colorscale:"Viridis",cmin:0,cmax:1,
+        colorbar:{title:"score",thickness:12}} }];
+  } else if (mode==="pareto"){
+    const front=pts.filter(d=>d._pareto), rest=pts.filter(d=>!d._pareto); tracePts=[rest,front];
+    traces=[
+      {type:"scattergl",mode:"markers",name:`dominated (${rest.length})`,x:rest.map(d=>d[xk]),y:rest.map(d=>d[yk]),
+        text:rest.map(hover),hoverinfo:"text",marker:{size:5,opacity:.3,color:"#bbb"}},
+      {type:"scattergl",mode:"markers",name:`★ Pareto front (${front.length})`,x:front.map(d=>d[xk]),y:front.map(d=>d[yk]),
+        text:front.map(hover),hoverinfo:"text",marker:{size:9,opacity:.9,color:"#e2001a",line:{width:1,color:"#fff"}}},
+    ];
+  } else {
+    const groups=new Map(), groupOf=d=>{ const r=d.catPath[d.catPath.length-1];
+      return topCats.includes(r)?r:"Other"; };
+    for (const d of pts){ const g=groupOf(d); (groups.get(g)||groups.set(g,[]).get(g)).push(d); }
+    const order=[...topCats.filter(c=>groups.has(c)), ...(groups.has("Other")?["Other"]:[])];
+    tracePts = order.map(g=>groups.get(g));
+    traces = order.map((g,i)=>{ const arr=groups.get(g);
+      return {type:"scattergl",mode:"markers",name:`${g==="Other"?"Other":esc(catById.get(g).name)} (${arr.length})`,
+        x:arr.map(d=>d[xk]),y:arr.map(d=>d[yk]),text:arr.map(hover),hoverinfo:"text",
+        marker:{size:6,opacity:.6,color:g==="Other"?"#bbb":PALETTE[i%PALETTE.length]}}; });
+  }
+
+  Plotly.react("plot", traces, {
+    margin:{l:60,r:20,t:10,b:50},
+    xaxis:{title:AXES[xk], type:X("logx").checked?"log":"linear", zeroline:false},
+    yaxis:{title:AXES[yk], type:X("logy").checked?"log":"linear", zeroline:false},
+    hovermode:"closest", showlegend:mode!=="score", legend:{font:{size:11}},
+    paper_bgcolor:"#fff", plot_bgcolor:"#fff",
+  }, {responsive:true, displaylogo:false}).then(gd=>{
+    if (!gd._cardBound){ gd._cardBound=true; gd.on("plotly_click", ev=>{
+      const p=ev.points[0], d=tracePts[p.curveNumber]?.[p.pointNumber]; if (d) showCard(d);
+    }); }
+  });
+
+  buildTable(opt);
+  const paretoN = opt.filter(d=>d._pareto).length;
+  X("count").innerHTML = `<b>${pts.length.toLocaleString()}</b> plotted · `
+    + `${opt.length.toLocaleString()} scorable · <b>${paretoN}</b> Pareto-optimal`;
+  X("hint").textContent = optimizeMode
+    ? "Best products sit top-left (high protein, low €/100g). Click a point for its photo & category path. "
+      + "Unfiltered, pet food & pure-protein additives top the list — scope with the category tree to compare real foods."
+    : "Drag to zoom • click a point for details • click legend to toggle categories.";
+}
+
+function buildTable(opt){
+  const rowsFor = X("paretoOnly").checked ? opt.filter(d=>d._pareto) : opt;
+  const top=[...rowsFor].sort((a,b)=>b._score-a._score).slice(0,30);
+  const head=`<tr><th>#</th><th></th><th class="name">Product</th><th>€/100g</th>`
+    +`<th>kcal</th><th>prot</th><th>g/€</th><th>score</th></tr>`;
+  X("results").innerHTML = head + top.map((d,i)=>`<tr class="${d._pareto?'pareto':''}">`
+    +`<td>${i+1}</td>`
+    +`<td class="img">${d.thumb?`<img src="${d.thumb}" alt="">`:''}</td>`
+    +`<td class="name">${esc(d.name)}${d._pareto?' ★':''}<div class="path">${esc(pathNames(d))}</div></td>`
+    +`<td>${d.pricePer100}</td><td>${d.energy}</td><td>${d.protein}</td>`
+    +`<td>${d.proteinPerEur}</td><td><b>${(d._score*100).toFixed(0)}</b></td></tr>`).join("");
+}
+
+function showCard(d){
+  const c = X("card");
+  c.hidden = false;
+  c.innerHTML = `<span class="close" onclick="this.parentNode.hidden=true">×</span>`
+    + (d.thumb?`<img src="${d.thumb}" alt="">`:"")
+    + `<h4>${esc(d.name)}</h4><div class="path">${esc(pathNames(d))}</div>`
+    + `<div class="stats">`
+    + `<span>Price</span><b>€${d.actualPrice} (€${d.pricePer100}/100g)</b>`
+    + `<span>Energy</span><b>${d.energy} kcal</b><span>Protein</span><b>${d.protein} g</b>`
+    + `<span>Sugar</span><b>${d.sugar ?? "–"} g</b><span>Fat</span><b>${d.fat ?? "–"} g</b>`
+    + (d.optimizable?`<span>Score</span><b>${(d._score*100).toFixed(0)}${d._pareto?" · ★ Pareto":""}</b>`:"")
+    + `</div>`;
+}
+</script>
