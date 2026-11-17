@@ -27,8 +27,9 @@ that disagrees by more than half, the script uses the name's size. Goods sold by
 
 - Writes `data/<slug lowercased>_products_<date>.csv` (every product; `nutritionValid` marks
   rows whose label parsed) and the raw dump to `data_cache/`. Both are git-ignored.
-- The API investigation is in `iki/2024 scrape.ipynb` and `iki/2025 scrape.ipynb`. Their API
-  host (`search-952707942140…`) is gone; the script uses `searchservice-952707942140…`.
+- The script started as a port of the 2025 IKI notebook (removed from the repo on 2026-11-17;
+  see git history). Its API host (`search-952707942140…`) is gone; the script uses
+  `searchservice-952707942140…`.
 
 API notes: `POST /chains` (chain ids and URL slugs), `POST /categories` (400 per page,
 `fromIndex`), `POST /v1/frontend-products` (`limit` < 200, only ~1000 results deep per query,

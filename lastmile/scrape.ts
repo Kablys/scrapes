@@ -1,5 +1,5 @@
 // lastmile.lt product + nutrition scraper: IKI by default, --chain for the platform's other shops.
-// Script version of "2025 scrape.ipynb": same API, same cleaning rules, plus
+// Started as a port of the 2025 IKI notebook (now in git history only), plus
 // price-per-kg and protein/kcal-per-euro columns for meal planning.
 //
 //   deno run --allow-net --allow-read --allow-write scrape.ts            # fetch fresh data
