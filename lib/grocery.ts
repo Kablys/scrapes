@@ -187,6 +187,17 @@ export function quantityKg(s: string | undefined | null): number {
   return count * (unit === "kg" || unit === "l" ? v : v / 1000);
 }
 
+/** Pack size stated in a product name ("…, 400 g", "4 x 0,568 l"), in kg or litres. Only when
+ *  the name states exactly one size and it isn't approximate ("~500 g" is sold by weight). */
+export function nameQuantityKg(name: string | undefined | null): number {
+  if (!name || name.includes("~")) return NaN;
+  const all = [...name.matchAll(/(?:(\d+)\s*[x×]\s*)?(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l)\b/gi)];
+  if (all.length !== 1) return NaN;
+  const [, count, v, unit] = all[0];
+  const kg = parseFloat(v.replace(",", ".")) * (count ? parseInt(count) : 1);
+  return /^(kg|l)$/i.test(unit) ? kg : kg / 1000;
+}
+
 export const round = (x: number, d = 2) => (isFinite(x) ? Math.round(x * 10 ** d) / 10 ** d : NaN);
 
 // ---- output ----
@@ -220,9 +231,11 @@ export function toRow(p: Input) {
   // Fresh produce and counter meat carry no label; bad labels are blanked, not dropped.
   const nutritionValid = isValidNutrition(n);
   if (!nutritionValid) n = NO_NUTRITION;
+  // Barbora lists unavailable products at price 0: treat that as no price.
+  const price = p.price > 0 ? p.price : NaN;
   const sale = p.salePrice ?? null, loyalty = p.loyaltyPrice ?? null;
-  const best = Math.min(...[p.price, sale, loyalty].filter((x): x is number => x != null && isFinite(x)));
-  const pricePerKg = p.packKg > 0 ? p.price / p.packKg : NaN;
+  const best = Math.min(...[price, sale, loyalty].filter((x): x is number => x != null && x > 0));
+  const pricePerKg = p.packKg > 0 ? price / p.packKg : NaN;
   const bestPerKg = p.packKg > 0 ? best / p.packKg : NaN;
   return {
     name: p.name,
@@ -231,7 +244,7 @@ export function toRow(p: Input) {
     nutritionValid,
     ...n,
     proteinPer100kcal: round((n.protein / n.energy) * 100, 1),
-    price: p.price,
+    price,
     salePrice: sale ?? "",
     loyaltyPrice: loyalty ?? "",
     packKg: round(p.packKg, 3),

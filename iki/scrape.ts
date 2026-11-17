@@ -18,6 +18,7 @@
 // (lastmile.lt exposes it as NEXT_PUBLIC_SEARCH_URL in the page's __NEXT_DATA__).
 
 import { stringify } from "jsr:@std/csv@1";
+import { isValidNutrition, nameQuantityKg } from "../lib/grocery.ts";
 
 const SEARCH_URL = "https://searchservice-952707942140.europe-north1.run.app";
 const PAGE = 100; // the API rejects limit >= 200 ("search_limit_too_large")
@@ -135,19 +136,6 @@ function isValidEnergy(value: string): boolean {
 
 const num = (s: string | undefined) => (s ? parseFloat(s.replace(",", ".")) : NaN);
 
-function isValidNutrition(p: Record<string, number>) {
-  if (p.energy > 900) return false;
-  if (p.fat > 100) return false;
-  if (p.satFat > 100 || p.satFat > p.fat) return false;
-  if (p.carbs > 100) return false;
-  if (p.sugar > 100 || p.sugar > p.carbs) return false;
-  if (p.protein > 100) return false;
-  if (p.salt > 100) return false;
-  const macro = [p.fat, p.carbs, p.protein, p.salt].filter((x) => !isNaN(x));
-  if (macro.reduce((a, b) => a + b, 0) > 100) return false;
-  return true;
-}
-
 // A price in `prc` only counts while its "till" date is in the future (or unset).
 function livePrice(price: number | null | undefined, till: string | null | undefined) {
   if (price == null) return null;
@@ -189,11 +177,16 @@ const rows = raw
 
     // Price per kg (or L). Weighed goods are already priced per kg.
     const perUnitMeasure = ["KG", "L"].includes(p.conversionMeasure);
-    const packKg = ["KG", "L"].includes(p.unitOfMeasure)
+    let packKg = ["KG", "L"].includes(p.unitOfMeasure)
       ? 1
       : perUnitMeasure
       ? p.conversionValue
       : p.conversionToKg;
+    // Some chains (PROMO, Livin, Assorti) report a placeholder size (0.2–0.3 kg, or 1 for a piece).
+    // Trust the size printed in the name when it disagrees by more than half.
+    const named = nameQuantityKg(p.name?.lt);
+    const byWeight = ["KG", "L"].includes(p.unitOfMeasure);
+    if (!byWeight && named > 0 && !(packKg > named / 1.5 && packKg < named * 1.5)) packKg = named;
     const pricePerKg = packKg > 0 ? regular / packKg : NaN;
     const bestPerKg = packKg > 0 ? best / packKg : NaN;
 

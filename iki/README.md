@@ -19,6 +19,10 @@ same API (an unknown slug prints the active list). Grocery chains in 2026-11:
 | `Assorti-by-Livin`   | Assorti (Bio Sala)   |    4 547 |          2 207 |
 | `Livin`              | Livin (Bio Sala)     |    2 398 |              2 |
 
+lastmile reports a placeholder pack size (0.2–0.3 kg) for many PROMO, Assorti and Livin products,
+which breaks price per kg. When the product name states one size that disagrees by more than half,
+the script uses the name's size.
+
 Output goes to `data/<slug lowercased>_products_<date>.csv`, so IKI keeps `iki_products_<date>.csv`.
 
 - `scrape.ts` — the script. Writes `data/<chain>_products_<date>.csv` (every product;
